@@ -22,18 +22,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ===============================
-# 🔐 Binance & Telegram
+# 🔐 Configuración desde variables de entorno (seguro en Render)
 # ===============================
-BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "oCYyOTBPPLr2ggLx8yszPRjSWxEecNQIL7U2iFPyhDTwsXNcD3otGMo1FtOdotHA")
-BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "9qtqNGYJSQqJPVQPaRLt0vYbRo4IPnSj3hby1sRUoWBbhqI4ETfRvsNPHyyZbflx")
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "7969091726:AAFVTZAlWN0aA6uMtJgWfnQhzTRD3cpx4wM")
-TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "1570204748"))
+# Validación básica
+if not all([BINANCE_API_KEY, BINANCE_API_SECRET, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
+    logger.error("❌ Faltan variables de entorno. Asegúrate de configurarlas en Render.")
+    sys.exit(1)
+
+try:
+    TELEGRAM_CHAT_ID = int(TELEGRAM_CHAT_ID)
+except ValueError:
+    logger.error("❌ TELEGRAM_CHAT_ID debe ser un número entero.")
+    sys.exit(1)
 
 client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
 
 # ===============================
-# ⚙️ Configuración
+# ⚙️ Configuración del bot
 # ===============================
 SYMBOLS = ["DOGEUSDT", "XRPUSDT", "ETHUSDT", "AVAXUSDT", "TRXUSDT", "XLMUSDT", "SOLUSDT"]
 TIMEFRAMES = ["1m", "3m", "5m", "15m"]
@@ -99,30 +109,44 @@ ultimo_estado = {
 def index():
     resultados_html = ""
     for res in ultimo_estado["resultados"]:
-        color = "success" if "✅" in res else "error"
-        resultados_html += f'<div class="log {color}">{res}</div>\n'
+        if "✅" in res or "🟢" in res:
+            clase = "success"
+        elif "❌" in res or "🔴" in res:
+            clase = "error"
+        else:
+            clase = "info"
+        resultados_html += f'<div class="log {clase}">{res}</div>\n'
 
     html = f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="es">
     <head>
         <meta charset="UTF-8">
         <title>EMA 4/9 Bot - Estado</title>
         <meta http-equiv="refresh" content="45">
         <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; background: #fff; }}
-            .log {{ padding: 10px; margin: 8px 0; border-radius: 4px; border-left: 4px solid #007BFF; }}
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f9f9f9; }}
+            .log {{ 
+                padding: 12px; 
+                margin: 10px 0; 
+                border-radius: 6px; 
+                border-left: 5px solid #007BFF; 
+                background: #fff;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }}
             .log.success {{ border-left-color: #28a745; color: #155724; background: #d4edda; }}
             .log.error {{ border-left-color: #dc3545; color: #721c24; background: #f8d7da; }}
+            .log.info {{ border-left-color: #17a2b8; color: #0c5460; background: #d1ecf1; }}
             h1 {{ color: #333; }}
+            .fecha {{ font-weight: bold; color: #007bff; }}
         </style>
     </head>
     <body>
         <h1>📈 Bot EMA 4/9 - Cruce Simple</h1>
-        <div class="log"><strong>Última ejecución:</strong> {ultimo_estado["fecha"]}</div>
+        <div class="log info"><strong>Última ejecución:</strong> <span class="fecha">{ultimo_estado["fecha"]}</span></div>
         {resultados_html}
-        <div class="log"><strong>Estado:</strong> {ultimo_estado["mensaje"] or "Esperando..."}</div>
-        <p><em>🔄 Recarga automática cada 45 segundos.</em></p>
+        <div class="log info"><strong>Estado:</strong> {ultimo_estado["mensaje"] or "Esperando próxima señal..."}</div>
+        <p><em>🔄 Esta página se recarga automáticamente cada 45 segundos.</em></p>
     </body>
     </html>
     """
@@ -162,8 +186,8 @@ def ejecutar_analisis():
             elif df['cruce_abajo'].iloc[-1]:
                 cruces_venta.append(tf)
 
-        # Solo generar señal si hay confluencia mínima
         if precio_actual is None:
+            ultimo_estado["resultados"].append(f"⚠️ {symbol}: Sin datos suficientes")
             continue
 
         if len(cruces_compra) >= MIN_CONFLUENCIA:
@@ -198,22 +222,24 @@ def ejecutar_analisis():
             ultimo_estado["resultados"].append(f"🟡 {symbol}: Sin confluencia suficiente")
 
 # ===============================
-# ▶️ Inicio del sistema
+# ▶️ Inicio del sistema (CORREGIDO para Render)
 # ===============================
 if __name__ == "__main__":
-    # Primera ejecución inmediata
-    ejecutar_analisis()
+    logger.info("🚀 Bot EMA 4/9 iniciado. Servidor web en preparación...")
 
-    # Hilo para análisis periódico
+    # Hilo para análisis periódico (NO bloquea el inicio)
     def loop_analisis():
+        time.sleep(5)  # Espera a que Flask arranque
         while True:
             try:
                 ejecutar_analisis()
             except Exception as e:
-                logger.error(f"❌ Error en el bucle: {e}")
+                logger.error(f"❌ Error en el bucle de análisis: {e}")
             time.sleep(45)  # Cada 45 segundos
 
-    Thread(target=loop_analisis, daemon=True).start()
+    # Iniciar hilo en segundo plano
+    analizador_thread = Thread(target=loop_analisis, daemon=True)
+    analizador_thread.start()
 
     # Iniciar servidor web
     port = int(os.getenv("PORT", 10000))
