@@ -1,4 +1,4 @@
-# app.py - Bot de Cruce EMA 4/9 para Render (con logs de depuración)
+# app.py - Bot EMA 4/9 para Render (con logs intensivos)
 import pandas as pd
 import numpy as np
 from binance.client import Client
@@ -12,36 +12,39 @@ import logging
 import sys
 
 # ===============================
-# 🔐 Logging
+# 🔐 Logging (más detallado)
 # ===============================
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Cambiado a DEBUG para ver todo
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
 # ===============================
-# 🔐 Cargar variables de entorno (NOMBRES, no valores)
+# 🔐 Variables de entorno
 # ===============================
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Validación crítica
+logger.debug(f"🔹 BINANCE_API_KEY: {BINANCE_API_KEY[:10]}...")  # Solo muestra los primeros 10 caracteres
+logger.debug(f"🔹 TELEGRAM_TOKEN: {TELEGRAM_TOKEN[:10]}...")
+logger.debug(f"🔹 TELEGRAM_CHAT_ID: {TELEGRAM_CHAT_ID}")
+
 if not all([BINANCE_API_KEY, BINANCE_API_SECRET, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
-    logger.error("❌ Faltan variables de entorno. Configúralas en Render con los nombres correctos.")
+    logger.error("❌ Faltan variables de entorno. Configúralas en Render.")
     sys.exit(1)
 
 try:
     TELEGRAM_CHAT_ID = int(TELEGRAM_CHAT_ID)
-except (ValueError, TypeError):
+except ValueError:
     logger.error("❌ TELEGRAM_CHAT_ID debe ser un número entero.")
     sys.exit(1)
 
 # ===============================
-# 🌐 Inicializar clientes (con verificación)
+# 🌐 Inicializar clientes (con try-except)
 # ===============================
 try:
     client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
@@ -59,15 +62,15 @@ except Exception as e:
     sys.exit(1)
 
 # ===============================
-# ⚙️ Configuración del bot
+# ⚙️ Configuración
 # ===============================
 SYMBOLS = ["DOGEUSDT", "XRPUSDT", "ETHUSDT", "AVAXUSDT", "TRXUSDT", "XLMUSDT", "SOLUSDT"]
 TIMEFRAMES = ["1m", "3m", "5m", "15m"]
 DATA_LIMIT = 100
-MIN_CONFLUENCIA = 2  # Mínimo de timeframes con cruce
+MIN_CONFLUENCIA = 2
 
 # ===============================
-# 📥 Descargar datos desde Binance
+# 📥 Descargar datos
 # ===============================
 def descargar_datos(symbol: str, interval: str, limit: int):
     try:
@@ -80,6 +83,7 @@ def descargar_datos(symbol: str, interval: str, limit: int):
         df['close'] = pd.to_numeric(df['close'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df.set_index('timestamp', inplace=True)
+        logger.debug(f"📊 Datos descargados para {symbol} ({interval}): {len(df)} filas")
         return df if len(df) >= 10 else None
     except Exception as e:
         logger.warning(f"⚠️ Error descargando {symbol} ({interval}): {e}")
@@ -107,7 +111,7 @@ async def enviar_alerta_telegram(mensaje: str):
         logger.error(f"❌ Error en Telegram: {e}")
 
 # ===============================
-# 🌐 Flask Web Server
+# 🌐 Flask
 # ===============================
 app = Flask(__name__)
 
@@ -134,23 +138,21 @@ def index():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>EMA 4/9 Bot - Render</title>
-        <meta http-equiv="refresh" content="180">
+        <title>EMA 4/9 Bot</title>
+        <meta http-equiv="refresh" content="45">
         <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f9f9f9; }}
+            body {{ font-family: Arial; margin: 20px; background: #f9f9f9; }}
             .log {{ padding: 10px; margin: 8px 0; border-radius: 4px; border-left: 4px solid #007BFF; background: #fff; }}
             .log.success {{ border-left-color: #28a745; background: #d4edda; }}
             .log.error {{ border-left-color: #dc3545; background: #f8d7da; }}
             .log.info {{ border-left-color: #17a2b8; background: #d1ecf1; }}
-            h1 {{ color: #333; }}
         </style>
     </head>
     <body>
-        <h1>📈 Bot EMA 4/9 - Cruce Simple</h1>
-        <div class="log info"><strong>Última ejecución:</strong> {ultimo_estado["fecha"]}</div>
+        <h1>📈 Bot EMA 4/9 - Render</h1>
+        <div class="log info">Última ejecución: {ultimo_estado["fecha"]}</div>
         {resultados_html}
-        <div class="log info"><strong>Estado:</strong> {ultimo_estado["mensaje"] or "Esperando..."}</div>
-        <p><em>🔄 Recarga automática cada 45 segundos.</em></p>
+        <div class="log info">Estado: {ultimo_estado["mensaje"] or "Esperando..."}</div>
     </body>
     </html>
     """
@@ -178,6 +180,7 @@ def ejecutar_analisis():
         precio_actual = None
 
         for tf in TIMEFRAMES:
+            logger.debug(f"🔍 Analizando {symbol} en {tf}...")
             df = descargar_datos(symbol, tf, DATA_LIMIT)
             if df is None:
                 continue
@@ -187,8 +190,10 @@ def ejecutar_analisis():
 
             if df['cruce_arriba'].iloc[-1]:
                 cruces_compra.append(tf)
+                logger.info(f"🟢 Cruce arriba en {symbol} ({tf})")
             elif df['cruce_abajo'].iloc[-1]:
                 cruces_venta.append(tf)
+                logger.info(f"🔴 Cruce abajo en {symbol} ({tf})")
 
         if precio_actual is None:
             ultimo_estado["resultados"].append(f"⚠️ {symbol}: Sin datos")
@@ -216,19 +221,19 @@ if __name__ == "__main__":
     logger.info("🚀 Bot EMA 4/9 iniciado. Preparando servidor...")
 
     def loop_analisis():
-        time.sleep(5)  # Esperar a que Flask arranque
+        time.sleep(5)
         logger.info("🔄 Hilo de análisis iniciado")
         while True:
             try:
+                logger.debug("🔁 Iniciando ciclo de análisis...")
                 ejecutar_analisis()
             except Exception as e:
                 logger.error(f"❌ Error en el bucle de análisis: {e}")
-            time.sleep(180)
+            time.sleep(45)
 
-    # Iniciar hilo en segundo plano
     analizador_thread = Thread(target=loop_analisis, daemon=True)
     analizador_thread.start()
 
-    # Iniciar servidor web
     port = int(os.getenv("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
