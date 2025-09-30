@@ -1,4 +1,4 @@
-# app.py - Bot EMA 4/9 para Render (con logs intensivos)
+# app.py - Bot EMA 4/9 para Render (versión ultra depurada)
 import pandas as pd
 import numpy as np
 from binance.client import Client
@@ -12,24 +12,24 @@ import logging
 import sys
 
 # ===============================
-# 🔐 Logging (más detallado)
+# 🔐 Logging (nivel DEBUG para ver todo)
 # ===============================
 logging.basicConfig(
-    level=logging.DEBUG,  # Cambiado a DEBUG para ver todo
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
 # ===============================
-# 🔐 Variables de entorno
+# 🔐 Cargar variables de entorno
 # ===============================
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-logger.debug(f"🔹 BINANCE_API_KEY: {BINANCE_API_KEY[:10]}...")  # Solo muestra los primeros 10 caracteres
+logger.debug(f"🔹 BINANCE_API_KEY: {BINANCE_API_KEY[:10]}...")
 logger.debug(f"🔹 TELEGRAM_TOKEN: {TELEGRAM_TOKEN[:10]}...")
 logger.debug(f"🔹 TELEGRAM_CHAT_ID: {TELEGRAM_CHAT_ID}")
 
@@ -236,4 +236,5 @@ if __name__ == "__main__":
 
     port = int(os.getenv("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
