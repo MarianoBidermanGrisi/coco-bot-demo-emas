@@ -1,4 +1,4 @@
-# app.py - Bot EMA 4/9 para Render (versión ultra depurada)
+# app.py - Bot EMA 4/9 para Render + Cron-Job.org (versión estable)
 import pandas as pd
 import numpy as np
 from binance.client import Client
@@ -6,13 +6,14 @@ from datetime import datetime
 import time
 import os
 import asyncio
-from flask import Flask, render_template_string
-from threading import Thread
 import logging
 import sys
+from threading import Thread
+from flask import Flask, render_template_string
+from telegram import Bot
 
 # ===============================
-# 🔐 Logging (nivel DEBUG para ver todo)
+# 🔐 Logging detallado
 # ===============================
 logging.basicConfig(
     level=logging.DEBUG,
@@ -22,29 +23,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ===============================
-# 🔐 Cargar variables de entorno
+# 🔐 Variables de entorno
 # ===============================
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-logger.debug(f"🔹 BINANCE_API_KEY: {BINANCE_API_KEY[:10]}...")
-logger.debug(f"🔹 TELEGRAM_TOKEN: {TELEGRAM_TOKEN[:10]}...")
-logger.debug(f"🔹 TELEGRAM_CHAT_ID: {TELEGRAM_CHAT_ID}")
-
 if not all([BINANCE_API_KEY, BINANCE_API_SECRET, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
-    logger.error("❌ Faltan variables de entorno. Configúralas en Render.")
+    logger.error("❌ Faltan variables de entorno. Verifica en Render.")
     sys.exit(1)
 
 try:
     TELEGRAM_CHAT_ID = int(TELEGRAM_CHAT_ID)
 except ValueError:
-    logger.error("❌ TELEGRAM_CHAT_ID debe ser un número entero.")
+    logger.error("❌ TELEGRAM_CHAT_ID debe ser un número entero válido.")
     sys.exit(1)
 
 # ===============================
-# 🌐 Inicializar clientes (con try-except)
+# 🌐 Inicializar clientes
 # ===============================
 try:
     client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
@@ -54,23 +51,25 @@ except Exception as e:
     sys.exit(1)
 
 try:
-    from telegram import Bot
     bot = Bot(token=TELEGRAM_TOKEN)
-    logger.info("✅ Bot de Telegram: inicializado")
+    # Crear loop asíncrono dedicado para Telegram
+    telegram_loop = asyncio.new_event_loop()
+    Thread(target=telegram_loop.run_forever, daemon=True).start()
+    logger.info("✅ Bot de Telegram inicializado")
 except Exception as e:
-    logger.error(f"❌ Error al inicializar Telegram Bot: {e}")
+    logger.error(f"❌ Error al inicializar Telegram: {e}")
     sys.exit(1)
 
 # ===============================
-# ⚙️ Configuración
+# ⚙️ Configuración del bot
 # ===============================
 SYMBOLS = ["DOGEUSDT", "XRPUSDT", "ETHUSDT", "AVAXUSDT", "TRXUSDT", "XLMUSDT", "SOLUSDT"]
 TIMEFRAMES = ["1m", "3m", "5m", "15m"]
 DATA_LIMIT = 100
-MIN_CONFLUENCIA = 2
+MIN_CONFLUENCIA = 2  # Mínimo de timeframes que deben confirmar la señal
 
 # ===============================
-# 📥 Descargar datos
+# 📥 Descargar datos de Binance
 # ===============================
 def descargar_datos(symbol: str, interval: str, limit: int):
     try:
@@ -90,7 +89,7 @@ def descargar_datos(symbol: str, interval: str, limit: int):
         return None
 
 # ===============================
-# 📊 Detectar cruce EMA 4/9
+# 📊 Calcular EMA 4/9 y detectar cruces
 # ===============================
 def detectar_cruce_ema(df):
     df = df.copy()
@@ -101,24 +100,32 @@ def detectar_cruce_ema(df):
     return df
 
 # ===============================
-# 💬 Enviar alerta por Telegram
+# 💬 Enviar alerta a Telegram (seguro en hilos)
 # ===============================
-async def enviar_alerta_telegram(mensaje: str):
+def enviar_alerta_telegram_sync(mensaje: str):
+    async def _send():
+        try:
+            await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=mensaje, parse_mode='Markdown')
+            logger.info("✅ Señal enviada a Telegram")
+        except Exception as e:
+            logger.error(f"❌ Error al enviar mensaje a Telegram: {e}")
+
+    # Enviar al loop dedicado
+    future = asyncio.run_coroutine_threadsafe(_send(), telegram_loop)
     try:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=mensaje, parse_mode='Markdown')
-        logger.info("✅ Alerta enviada por Telegram")
+        future.result(timeout=10)
     except Exception as e:
-        logger.error(f"❌ Error en Telegram: {e}")
+        logger.error(f"❌ Timeout al enviar a Telegram: {e}")
 
 # ===============================
-# 🌐 Flask
+# 🌐 Flask - Página de estado (sin refresh)
 # ===============================
 app = Flask(__name__)
 
 ultimo_estado = {
-    "fecha": "",
-    "resultados": [],
-    "mensaje": ""
+    "fecha": "Esperando análisis...",
+    "resultados": ["Bot no iniciado"],
+    "mensaje": "Esperando primer ciclo"
 }
 
 @app.route('/')
@@ -139,7 +146,7 @@ def index():
     <head>
         <meta charset="UTF-8">
         <title>EMA 4/9 Bot</title>
-        <meta http-equiv="refresh" content="45">
+        <!-- No se necesita refresh: controlado por cron-job.org -->
         <style>
             body {{ font-family: Arial; margin: 20px; background: #f9f9f9; }}
             .log {{ padding: 10px; margin: 8px 0; border-radius: 4px; border-left: 4px solid #007BFF; background: #fff; }}
@@ -149,10 +156,10 @@ def index():
         </style>
     </head>
     <body>
-        <h1>📈 Bot EMA 4/9 - Render</h1>
+        <h1>📈 Bot EMA 4/9 - Estado</h1>
         <div class="log info">Última ejecución: {ultimo_estado["fecha"]}</div>
         {resultados_html}
-        <div class="log info">Estado: {ultimo_estado["mensaje"] or "Esperando..."}</div>
+        <div class="log info">Estado: {ultimo_estado["mensaje"]}</div>
     </body>
     </html>
     """
@@ -162,17 +169,25 @@ def index():
 def health():
     return {"status": "ok"}
 
+@app.route('/analizar')  # Ruta que llamará cron-job.org
+def ruta_analizar():
+    try:
+        ejecutar_analisis()
+        return {"status": "análisis completado", "time": datetime.now().isoformat()}, 200
+    except Exception as e:
+        logger.error(f"❌ Error en /analizar: {e}")
+        return {"status": "error", "detail": str(e)}, 500
+
 # ===============================
 # 🔁 Análisis principal
 # ===============================
 def ejecutar_analisis():
     global ultimo_estado
     ahora = datetime.now()
-    logger.info(f"\n📆 [{ahora.strftime('%Y-%m-%d %H:%M:%S')}] Iniciando análisis EMA 4/9...")
-    
-    ultimo_estado["fecha"] = ahora.strftime('%Y-%m-%d %H:%M:%S')
-    ultimo_estado["resultados"] = []
-    ultimo_estado["mensaje"] = "Análisis completado"
+    logger.info(f"\n📆 [{ahora.strftime('%Y-%m-%d %H:%M:%S')}] Iniciando análisis...")
+
+    resultados = []
+    mensaje_general = "Sin señales"
 
     for symbol in SYMBOLS:
         cruces_compra = []
@@ -180,7 +195,6 @@ def ejecutar_analisis():
         precio_actual = None
 
         for tf in TIMEFRAMES:
-            logger.debug(f"🔍 Analizando {symbol} en {tf}...")
             df = descargar_datos(symbol, tf, DATA_LIMIT)
             if df is None:
                 continue
@@ -196,44 +210,50 @@ def ejecutar_analisis():
                 logger.info(f"🔴 Cruce abajo en {symbol} ({tf})")
 
         if precio_actual is None:
-            ultimo_estado["resultados"].append(f"⚠️ {symbol}: Sin datos")
+            resultados.append(f"⚠️ {symbol}: Sin datos")
             continue
 
         if len(cruces_compra) >= MIN_CONFLUENCIA:
-            mensaje = f"🟢 *SEÑAL DE COMPRA - EMA 4/9*\n*Par:* `{symbol}`\n*Precio:* `${precio_actual:,.6f}`\n*Timeframes:* `{', '.join(cruces_compra)}`\n*Fecha:* {ahora.strftime('%Y-%m-%d %H:%M:%S')}"
-            logger.info(f"✅ COMPRA en {symbol} ({', '.join(cruces_compra)})")
-            ultimo_estado["resultados"].append(f"✅ COMPRA: {symbol} en {', '.join(cruces_compra)}")
-            asyncio.run(enviar_alerta_telegram(mensaje))
+            mensaje = (
+                f"🟢 *SEÑAL DE COMPRA - EMA 4/9*\n"
+                f"*Par:* `{symbol}`\n"
+                f"*Precio:* `${precio_actual:,.6f}`\n"
+                f"*Timeframes:* `{', '.join(cruces_compra)}`\n"
+                f"*Fecha:* {ahora.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            resultados.append(f"✅ COMPRA: {symbol} en {', '.join(cruces_compra)}")
+            enviar_alerta_telegram_sync(mensaje)
+            mensaje_general = "Señal activa"
 
         elif len(cruces_venta) >= MIN_CONFLUENCIA:
-            mensaje = f"🔴 *SEÑAL DE VENTA - EMA 4/9*\n*Par:* `{symbol}`\n*Precio:* `${precio_actual:,.6f}`\n*Timeframes:* `{', '.join(cruces_venta)}`\n*Fecha:* {ahora.strftime('%Y-%m-%d %H:%M:%S')}"
-            logger.info(f"❌ VENTA en {symbol} ({', '.join(cruces_venta)})")
-            ultimo_estado["resultados"].append(f"❌ VENTA: {symbol} en {', '.join(cruces_venta)}")
-            asyncio.run(enviar_alerta_telegram(mensaje))
+            mensaje = (
+                f"🔴 *SEÑAL DE VENTA - EMA 4/9*\n"
+                f"*Par:* `{symbol}`\n"
+                f"*Precio:* `${precio_actual:,.6f}`\n"
+                f"*Timeframes:* `{', '.join(cruces_venta)}`\n"
+                f"*Fecha:* {ahora.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            resultados.append(f"❌ VENTA: {symbol} en {', '.join(cruces_venta)}")
+            enviar_alerta_telegram_sync(mensaje)
+            mensaje_general = "Señal activa"
 
         else:
-            ultimo_estado["resultados"].append(f"🟡 {symbol}: Sin confluencia")
+            resultados.append(f"🟡 {symbol}: Sin confluencia")
+
+    # Actualizar estado global
+    ultimo_estado["fecha"] = ahora.strftime('%Y-%m-%d %H:%M:%S')
+    ultimo_estado["resultados"] = resultados
+    ultimo_estado["mensaje"] = mensaje_general
+
 
 # ===============================
 # ▶️ Inicio del sistema
 # ===============================
 if __name__ == "__main__":
-    logger.info("🚀 Bot EMA 4/9 iniciado. Preparando servidor...")
+    logger.info("🚀 Bot EMA 4/9 iniciado. Escuchando en /analizar")
 
-    def loop_analisis():
-        time.sleep(5)
-        logger.info("🔄 Hilo de análisis iniciado")
-        while True:
-            try:
-                logger.debug("🔁 Iniciando ciclo de análisis...")
-                ejecutar_analisis()
-            except Exception as e:
-                logger.error(f"❌ Error en el bucle de análisis: {e}")
-            time.sleep(45)
-
-    analizador_thread = Thread(target=loop_analisis, daemon=True)
-    analizador_thread.start()
-
+    # Iniciar servidor Flask
     port = int(os.getenv("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
