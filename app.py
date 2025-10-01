@@ -1,19 +1,17 @@
-# app.py - Bot EMA 4/9 para Render + Cron-Job.org (versión estable)
+# app.py - Bot EMA 4/9 para Render + cron-job.org (modo manual)
 import pandas as pd
 import numpy as np
 from binance.client import Client
 from datetime import datetime
-import time
 import os
 import asyncio
 import logging
 import sys
-from threading import Thread
 from flask import Flask, render_template_string
 from telegram import Bot
 
 # ===============================
-# 🔐 Logging detallado
+# 🔐 Logging
 # ===============================
 logging.basicConfig(
     level=logging.DEBUG,
@@ -31,7 +29,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 if not all([BINANCE_API_KEY, BINANCE_API_SECRET, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
-    logger.error("❌ Faltan variables de entorno. Verifica en Render.")
+    logger.error("❌ Faltan variables de entorno.")
     sys.exit(1)
 
 try:
@@ -52,8 +50,9 @@ except Exception as e:
 
 try:
     bot = Bot(token=TELEGRAM_TOKEN)
-    # Crear loop asíncrono dedicado para Telegram
+    # Loop asíncrono dedicado para Telegram
     telegram_loop = asyncio.new_event_loop()
+    from threading import Thread
     Thread(target=telegram_loop.run_forever, daemon=True).start()
     logger.info("✅ Bot de Telegram inicializado")
 except Exception as e:
@@ -61,15 +60,15 @@ except Exception as e:
     sys.exit(1)
 
 # ===============================
-# ⚙️ Configuración del bot
+# ⚙️ Configuración
 # ===============================
 SYMBOLS = ["DOGEUSDT", "XRPUSDT", "ETHUSDT", "AVAXUSDT", "TRXUSDT", "XLMUSDT", "SOLUSDT"]
 TIMEFRAMES = ["1m", "3m", "5m", "15m"]
 DATA_LIMIT = 100
-MIN_CONFLUENCIA = 2  # Mínimo de timeframes que deben confirmar la señal
+MIN_CONFLUENCIA = 2
 
 # ===============================
-# 📥 Descargar datos de Binance
+# 📥 Descargar datos
 # ===============================
 def descargar_datos(symbol: str, interval: str, limit: int):
     try:
@@ -89,7 +88,7 @@ def descargar_datos(symbol: str, interval: str, limit: int):
         return None
 
 # ===============================
-# 📊 Calcular EMA 4/9 y detectar cruces
+# 📊 Detectar cruce EMA 4/9
 # ===============================
 def detectar_cruce_ema(df):
     df = df.copy()
@@ -100,7 +99,7 @@ def detectar_cruce_ema(df):
     return df
 
 # ===============================
-# 💬 Enviar alerta a Telegram (seguro en hilos)
+# 💬 Enviar alerta a Telegram (seguro)
 # ===============================
 def enviar_alerta_telegram_sync(mensaje: str):
     async def _send():
@@ -108,24 +107,23 @@ def enviar_alerta_telegram_sync(mensaje: str):
             await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=mensaje, parse_mode='Markdown')
             logger.info("✅ Señal enviada a Telegram")
         except Exception as e:
-            logger.error(f"❌ Error al enviar mensaje a Telegram: {e}")
+            logger.error(f"❌ Error al enviar a Telegram: {e}")
 
-    # Enviar al loop dedicado
     future = asyncio.run_coroutine_threadsafe(_send(), telegram_loop)
     try:
         future.result(timeout=10)
     except Exception as e:
-        logger.error(f"❌ Timeout al enviar a Telegram: {e}")
+        logger.error(f"❌ Timeout al enviar mensaje: {e}")
 
 # ===============================
-# 🌐 Flask - Página de estado (sin refresh)
+# 🌐 Flask App
 # ===============================
 app = Flask(__name__)
 
 ultimo_estado = {
-    "fecha": "Esperando análisis...",
-    "resultados": ["Bot no iniciado"],
-    "mensaje": "Esperando primer ciclo"
+    "fecha": "Esperando primer análisis...",
+    "resultados": ["El bot aún no ha analizado."],
+    "mensaje": "Esperando"
 }
 
 @app.route('/')
@@ -146,7 +144,7 @@ def index():
     <head>
         <meta charset="UTF-8">
         <title>EMA 4/9 Bot</title>
-        <!-- No se necesita refresh: controlado por cron-job.org -->
+        <!-- Controlado por cron-job.org -->
         <style>
             body {{ font-family: Arial; margin: 20px; background: #f9f9f9; }}
             .log {{ padding: 10px; margin: 8px 0; border-radius: 4px; border-left: 4px solid #007BFF; background: #fff; }}
@@ -169,14 +167,11 @@ def index():
 def health():
     return {"status": "ok"}
 
-@app.route('/analizar')  # Ruta que llamará cron-job.org
+@app.route('/analizar')
 def ruta_analizar():
-    try:
-        ejecutar_analisis()
-        return {"status": "análisis completado", "time": datetime.now().isoformat()}, 200
-    except Exception as e:
-        logger.error(f"❌ Error en /analizar: {e}")
-        return {"status": "error", "detail": str(e)}, 500
+    logger.info("🔹 Ruta /analizar accedida — Iniciando análisis programado")
+    ejecutar_analisis()
+    return {"status": "análisis completado", "time": datetime.now().isoformat()}, 200
 
 # ===============================
 # 🔁 Análisis principal
@@ -184,7 +179,7 @@ def ruta_analizar():
 def ejecutar_analisis():
     global ultimo_estado
     ahora = datetime.now()
-    logger.info(f"\n📆 [{ahora.strftime('%Y-%m-%d %H:%M:%S')}] Iniciando análisis...")
+    logger.info(f"\n📆 [{ahora.strftime('%Y-%m-%d %H:%M:%S')}] Análisis iniciado por solicitud externa")
 
     resultados = []
     mensaje_general = "Sin señales"
@@ -245,15 +240,12 @@ def ejecutar_analisis():
     ultimo_estado["resultados"] = resultados
     ultimo_estado["mensaje"] = mensaje_general
 
+    logger.info("✅ Análisis completado y estado actualizado")
 
 # ===============================
-# ▶️ Inicio del sistema
+# ▶️ Inicio del servidor
 # ===============================
 if __name__ == "__main__":
-    logger.info("🚀 Bot EMA 4/9 iniciado. Escuchando en /analizar")
-
-    # Iniciar servidor Flask
     port = int(os.getenv("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
-
 
