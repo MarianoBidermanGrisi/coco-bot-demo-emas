@@ -1,5 +1,7 @@
-# bot_web_service_bingx.py
-# ✅ VERSIÓN ADAPTADA PARA BINGX CON DINERO REAL
+# bot_web_service_bingx_fixed.py
+# ✅ VERSIÓN CORREGIDA - Usa Binance para datos, BingX para órdenes
+# 🎯 MANTIENE: Lógica de trading, Detección breakout, Gestión riesgo, Optimizador IA, etc.
+
 import requests
 import time
 import json
@@ -16,7 +18,7 @@ from flask import Flask, request, jsonify
 import threading
 import logging
 
-# --- MÓDULO BINGX TRADER (NUEVO) ---
+# --- MÓDULO BINGX TRADER (MANTENER IGUAL) ---
 from bingx_trader import BingXTrader
 
 logger_bingx = logging.getLogger("BingXTrader")
@@ -120,7 +122,7 @@ class OptimizadorIA:
         return mejores_param
 
 # ---------------------------
-# BOT PRINCIPAL - ADAPTADO PARA BINGX
+# BOT PRINCIPAL - CORREGIDO (BINANCE DATOS + BINGX ÓRDENES)
 # ---------------------------
 class TradingBot:
     def __init__(self, config):
@@ -138,11 +140,11 @@ class TradingBot:
         self.estado_file = config.get('estado_file', 'estado_bot.json')
         self.cargar_estado()
         
-        # ✅ CAMBIO PRINCIPAL: Usar BingXTrader en lugar de BinanceTrader
+        # ✅ BINGX PARA ÓRDENES (DINERO REAL)
         self.trader = BingXTrader(
             api_key=config['bingx_api_key'],
             secret_key=config['bingx_secret_key'],
-            testnet=config.get('bingx_testnet', False)  # Por defecto False (dinero real)
+            testnet=config.get('bingx_testnet', False)
         )
         
         if not self.trader.check_connection():
@@ -231,33 +233,27 @@ class TradingBot:
         except Exception as e:
             print(f"⚠ Error guardando estado: {e}")
 
+    # ✅ CORRECCIÓN PRINCIPAL: Usar Binance para datos de mercado
     def obtener_datos_mercado_config(self, simbolo, timeframe, num_velas):
-        """✅ ADAPTADO: Obtener datos de BingX en lugar de Binance"""
-        # Mapear timeframes de Binance a BingX
-        timeframe_map = {
-            '1m': '1m', '3m': '3m', '5m': '5m', 
-            '15m': '15m', '30m': '30m', '1h': '1h',
-            '4h': '4h', '1d': '1d'
-        }
-        
-        bingx_timeframe = timeframe_map.get(timeframe, '5m')
-        bingx_symbol = simbolo.replace('USDT', '-USDT')
-        
-        url = "https://open-api.bingx.com/openApi/swap/v2/quote/klines"
-        params = {
-            'symbol': bingx_symbol,
-            'interval': bingx_timeframe,
-            'limit': num_velas + 14
-        }
-        
+        """✅ USAR BINANCE PARA DATOS - MÁS CONFIABLE"""
         try:
-            respuesta = requests.get(url, params=params, timeout=10)
-            datos = respuesta.json()
+            url = "https://api.binance.com/api/v3/klines"
+            params = {
+                'symbol': simbolo,
+                'interval': timeframe,
+                'limit': num_velas + 14
+            }
             
-            if datos.get('code') != 0 or not datos.get('data'):
+            respuesta = requests.get(url, params=params, timeout=10)
+            
+            if respuesta.status_code != 200:
                 return None
                 
-            klines = datos['data']
+            klines = respuesta.json()
+            
+            if not klines or len(klines) < num_velas:
+                return None
+            
             maximos = [float(vela[2]) for vela in klines]  # High
             minimos = [float(vela[3]) for vela in klines]  # Low  
             cierres = [float(vela[4]) for vela in klines]  # Close
@@ -272,8 +268,9 @@ class TradingBot:
                 'timeframe': timeframe,
                 'num_velas': num_velas
             }
+            
         except Exception as e:
-            print(f"❌ Error obteniendo datos de BingX para {simbolo}: {e}")
+            print(f"❌ Error obteniendo datos de Binance para {simbolo}: {e}")
             return None
 
     # === MÉTODOS DE ANÁLISIS TÉCNICO (SIN CAMBIOS) ===
@@ -571,7 +568,7 @@ class TradingBot:
         return False
 
     def ejecutar_operacion_bingx(self, simbolo, tipo_operacion, precio_entrada, sl, tp):
-        """✅ ADAPTADO: Ejecutar operación en BingX"""
+        """✅ EJECUTAR OPERACIÓN EN BINGX (DINERO REAL)"""
         if not self.trader:
             print("❌ Trader no disponible. Operación omitida.")
             return False
@@ -663,7 +660,7 @@ class TradingBot:
                 print(f"⚠️ Error monitoreando órdenes para {simbolo}: {e}")
 
     def verificar_cierre_operaciones(self):
-        """✅ ADAPTADO: Verificar cierre de operaciones en BingX"""
+        """✅ DETECCIÓN DE CIERRE REAL EN BINGX"""
         if not self.operaciones_activas:
             return []
         
@@ -814,7 +811,7 @@ class TradingBot:
                     if tiempo_desde_ultimo < 2:
                         continue
                 
-                # ✅ CAMBIO: Usar ejecución BingX en lugar de Binance
+                # ✅ USAR BINGX PARA EJECUCIÓN
                 if self.ejecutar_operacion_bingx(simbolo, tipo_operacion, precio_entrada, sl, tp):
                     self.generar_senal_operacion(
                         simbolo, tipo_operacion, precio_entrada, tp, sl, 
@@ -853,7 +850,6 @@ class TradingBot:
 💰 Precio breakout: {breakout_info['precio_breakout']:.8f}
 """
         
-        # ✅ ACTUALIZADO: Mensaje para BingX
         mensaje = f"""
 🎯 <b>SEÑAL DE {tipo_operacion} - {simbolo} (BINGX REAL)</b>
 {breakout_texto}
@@ -1257,7 +1253,8 @@ class TradingBot:
         print("\n" + "=" * 70)
         print("🤖 BOT DE TRADING - ESTRATEGIA BREAKOUT + REENTRY")
         print("🎯 ADAPTADO PARA: BINGX CON DINERO REAL")
-        print("💱 EXCHANGE: BingX Futures")
+        print("📊 DATOS: Binance API (Confiable)")
+        print("💱 ÓRDENES: BingX (Dinero Real)")
         print("💰 MODO: DINERO REAL")
         print("📌 APALANCAMIENTO: 5x")
         print("=" * 70)
@@ -1293,7 +1290,7 @@ class TradingBot:
                 pass
 
 # ---------------------------
-# CONFIGURACIÓN PARA BINGX
+# CONFIGURACIÓN PARA BINGX (SIN CAMBIOS)
 # ---------------------------
 def crear_config_desde_entorno():
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
@@ -1315,10 +1312,10 @@ def crear_config_desde_entorno():
             'BCHUSDT','EOSUSDT','TRXUSDT','XTZUSDT','SUSHIUSDT','COMPUSDT','YFIUSDT','ETCUSDT',
             'SNXUSDT','RENUSDT','1INCHUSDT','NEOUSDT','ZILUSDT','HOTUSDT','ENJUSDT','ZECUSDT'
         ],
-        # ✅ CAMBIO: Usar BingX en lugar de Binance
+        # ✅ BINGX PARA ÓRDENES
         'bingx_api_key': os.environ.get('BINGX_API_KEY'),
         'bingx_secret_key': os.environ.get('BINGX_SECRET_KEY'),
-        'bingx_testnet': os.environ.get('BINGX_TESTNET', 'false').lower() == 'true',  # Por defecto false (dinero real)
+        'bingx_testnet': os.environ.get('BINGX_TESTNET', 'false').lower() == 'true',
         
         'telegram_token': os.environ.get('TELEGRAM_TOKEN'),
         'telegram_chat_ids': telegram_chat_ids,
@@ -1350,7 +1347,7 @@ bot_thread.start()
 
 @app.route('/')
 def index():
-    return "Bot Breakout + Reentry (BingX) está en línea.", 200
+    return "Bot Breakout + Reentry (BingX - Datos Binance) está en línea.", 200
 
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
