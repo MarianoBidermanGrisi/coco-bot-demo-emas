@@ -6,12 +6,12 @@ requests>=2.31.0
 urllib3>=2.0.0
 
 # Datos y análisis
-pandas>=2.0.0
+pandas>=2.1.0
 numpy>=1.24.0
 
 # Gráficos
-matplotlib>=3.7.0
-mplfinance>=0.12.0
+matplotlib>=3.8.0
+mplfinance>=0.12.9b7
 
 # Servidor web
 flask>=2.3.0
