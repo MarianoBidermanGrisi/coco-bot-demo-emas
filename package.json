@@ -1,0 +1,28 @@
+{
+  "name": "trading-bot-orchestrator",
+  "version": "1.0.0",
+  "description": "Orquestador Node.js para el Bot de Trading Breakout + Reentry",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "trading",
+    "bot",
+    "cryptocurrency",
+    "binance",
+    "breakout",
+    "reentry",
+    "strategy"
+  ],
+  "author": "MiniMax Agent",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "child_process": "^1.0.2"
+  }
+}
