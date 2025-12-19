@@ -53,7 +53,7 @@ return {
 'status': 'emergency_mode',
 'message': 'La aplicación principal no pudo cargarse',
 'error': import_error or 'Unknown import error',
-'timestamp': '2025-12-20T02:46:44Z'
+'timestamp': '2025-12-20T02:49:41Z'
 }
 
 @app.route('/health')
@@ -62,7 +62,7 @@ return {
 'status': 'emergency',
 'health': 'degraded',
 'error': import_error or 'Unknown import error',
-'timestamp': '2025-12-20T02:46:44Z'
+'timestamp': '2025-12-20T02:49:41Z'
 }
 
 print("⚠️ Aplicación Flask de emergencia creada")
