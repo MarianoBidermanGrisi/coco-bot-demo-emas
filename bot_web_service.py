@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Agregar el directorio actual al path para imports locales
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
-sys.path.insert(0, current_dir)
+    sys.path.insert(0, current_dir)
 
 # Importar HealthCheckAPI con manejo de errores
 try:
@@ -290,3 +290,4 @@ service.start()
 except Exception as e:
 logger.error(f"❌ Error ejecutando en modo desarrollo: {e}")
 sys.exit(1)
+
