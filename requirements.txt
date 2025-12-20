@@ -18,12 +18,34 @@ flask>=2.3.0
 
 # Utilidades
 python-dateutil>=2.8.0
+python-dotenv>=1.0.0
 
 # Logging y sistema
 psutil>=5.9.0
-
 gunicorn>=21.0.0
-python-dotenv>=1.0.0
 
+# Utilities adicionales
+click>=8.0.0
+blinker>=1.7.0
+itsdangerous>=2.1.0
+jinja2>=3.1.0
+markupsafe>=2.1.0
+werkzeug>=2.3.0
 
+# Configuración y parsing
+certifi>=2023.0.0
+charset-normalizer>=3.0.0
+idna>=3.4
+six>=1.16.0
+pytz>=2023.3
+tzdata>=2023.3
 
+# Análisis técnico y financiero
+yfinance>=0.2.0
+ta>=0.10.0
+
+# Binance API (opcional)
+python-binance>=1.0.16
+
+# Telegram Bot
+python-telegram-bot>=20.0
