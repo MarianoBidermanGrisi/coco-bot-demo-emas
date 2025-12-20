@@ -33,7 +33,9 @@ class HealthCheckAPI:
     def _create_flask_app(self):
         """Crea la instancia de Flask"""
         try:
-            from flask import Flask
+            from flask import Flask, jsonify
+            # Hacer jsonify disponible para toda la clase
+            self.jsonify = jsonify
             return Flask(__name__)
         except ImportError as e:
             logger.error(f"❌ Error importando Flask: {e}")
@@ -48,10 +50,10 @@ class HealthCheckAPI:
             try:
                 health_status = self.get_health_status()
                 status_code = 200 if health_status['status'] == 'healthy' else 503
-                return jsonify(health_status), status_code
+                return self.jsonify(health_status), status_code
             except Exception as e:
                 logger.error(f"❌ Error en health check: {e}")
-                return jsonify({
+                return self.jsonify({
                     'status': 'error',
                     'error': str(e),
                     'timestamp': datetime.now().isoformat()
@@ -61,10 +63,10 @@ class HealthCheckAPI:
         def status():
             """Endpoint de estado detallado"""
             try:
-                return jsonify(self.get_detailed_status())
+                return self.jsonify(self.get_detailed_status())
             except Exception as e:
                 logger.error(f"❌ Error en status detallado: {e}")
-                return jsonify({
+                return self.jsonify({
                     'status': 'error',
                     'error': str(e),
                     'timestamp': datetime.now().isoformat()
@@ -76,13 +78,13 @@ class HealthCheckAPI:
             try:
                 ready = self.is_ready()
                 status_code = 200 if ready else 503
-                return jsonify({
+                return self.jsonify({
                     'ready': ready,
                     'timestamp': datetime.now().isoformat()
                 }), status_code
             except Exception as e:
                 logger.error(f"❌ Error en readiness check: {e}")
-                return jsonify({
+                return self.jsonify({
                     'ready': False,
                     'error': str(e),
                     'timestamp': datetime.now().isoformat()
@@ -92,10 +94,10 @@ class HealthCheckAPI:
         def metrics():
             """Endpoint de métricas"""
             try:
-                return jsonify(self.get_metrics())
+                return self.jsonify(self.get_metrics())
             except Exception as e:
                 logger.error(f"❌ Error obteniendo métricas: {e}")
-                return jsonify({
+                return self.jsonify({
                     'error': str(e),
                     'timestamp': datetime.now().isoformat()
                 }), 500
@@ -103,7 +105,7 @@ class HealthCheckAPI:
         @self.app.route('/', methods=['GET'])
         def index():
             """Página principal"""
-            return jsonify({
+            return self.jsonify({
                 'service': 'Trading Bot Breakout + Reentry',
                 'version': '1.0.0',
                 'status': 'running',
